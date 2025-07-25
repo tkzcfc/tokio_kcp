@@ -3,20 +3,18 @@ use std::{
     net::SocketAddr,
     sync::Arc,
     task::{Context, Poll},
-    time::Duration,
 };
 
+use crate::{config::KcpConfig, session::KcpSessionManager, stream::KcpStream};
 use byte_string::ByteStr;
 use kcp::{Error as KcpError, KcpResult};
 use log::{debug, error, trace};
+use tokio::task::yield_now;
 use tokio::{
     net::{ToSocketAddrs, UdpSocket},
     sync::mpsc,
     task::JoinHandle,
-    time,
 };
-
-use crate::{config::KcpConfig, session::KcpSessionManager, stream::KcpStream};
 
 #[derive(Debug)]
 pub struct KcpListener {
@@ -61,7 +59,8 @@ impl KcpListener {
                         match recv_res {
                             Err(err) => {
                                 error!("udp.recv_from failed, error: {}", err);
-                                time::sleep(Duration::from_secs(1)).await;
+                                yield_now().await;
+                                // time::sleep(Duration::from_secs(1)).await;
                             }
                             Ok((n, peer_addr)) => {
                                 let packet = &mut packet_buffer[..n];
@@ -151,8 +150,9 @@ impl KcpListener {
 
     pub fn poll_accept(&mut self, cx: &mut Context<'_>) -> Poll<KcpResult<(KcpStream, SocketAddr)>> {
         self.accept_rx.poll_recv(cx).map(|op_res| {
-            op_res
-                .ok_or_else(|| KcpError::IoError(io::Error::new(ErrorKind::Other, "accept channel closed unexpectedly")))
+            op_res.ok_or_else(|| {
+                KcpError::IoError(io::Error::new(ErrorKind::Other, "accept channel closed unexpectedly"))
+            })
         })
     }
 
